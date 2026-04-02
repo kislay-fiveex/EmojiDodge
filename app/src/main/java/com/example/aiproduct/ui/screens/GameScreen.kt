@@ -72,6 +72,21 @@ private data class Obstacle(
     val size: Float
 )
 
+private enum class PowerUpType(val emoji: String, val bonus: Int) {
+    Bonus50("✨", 50),
+    Bonus100("💎", 100),
+    Shield("🛡️", 0)
+}
+
+private data class PowerUp(
+    val id: Int,
+    val x: Float,
+    val y: Float,
+    val speed: Float,
+    val type: PowerUpType,
+    val size: Float
+)
+
 @Composable
 fun GameScreen(onGameOver: (Int) -> Unit, onExit: () -> Unit) {
     val onGameOverState by rememberUpdatedState(onGameOver)
@@ -90,6 +105,7 @@ fun GameScreen(onGameOver: (Int) -> Unit, onExit: () -> Unit) {
     val highScoreScale = remember { Animatable(1f) }
     val highScoreGlow = remember { Animatable(0f) }
     val scoreScale = remember { Animatable(1f) }
+    val bonusPulse = remember { Animatable(0f) }
     val scope = rememberCoroutineScope()
     val bgTransition = rememberInfiniteTransition(label = "bg")
     val starDrift by bgTransition.animateFloat(
@@ -106,6 +122,9 @@ fun GameScreen(onGameOver: (Int) -> Unit, onExit: () -> Unit) {
     var isPaused by remember { mutableStateOf(false) }
     var hitHandled by remember { mutableStateOf(false) }
     var hitPosition by remember { mutableStateOf<Offset?>(null) }
+    var isInvincible by remember { mutableStateOf(false) }
+    var invincibleMs by remember { mutableLongStateOf(0L) }
+    var bonusText by remember { mutableStateOf<String?>(null) }
 
     BoxWithConstraints(
         modifier = Modifier
@@ -125,6 +144,7 @@ fun GameScreen(onGameOver: (Int) -> Unit, onExit: () -> Unit) {
 
         var playerX by remember(widthPx) { mutableStateOf(widthPx / 2f) }
         var obstacles by remember { mutableStateOf(emptyList<Obstacle>()) }
+        var powerUps by remember { mutableStateOf(emptyList<PowerUp>()) }
         var isRunning by remember { mutableStateOf(true) }
         var elapsedMs by remember { mutableLongStateOf(0L) }
         var score by remember { mutableIntStateOf(0) }
@@ -152,6 +172,9 @@ fun GameScreen(onGameOver: (Int) -> Unit, onExit: () -> Unit) {
                 obstacles = obstacles
                     .map { obstacle -> obstacle.copy(y = obstacle.y + obstacle.speed * dt) }
                     .filter { obstacle -> obstacle.y < heightPx + obstacle.size }
+                powerUps = powerUps
+                    .map { powerUp -> powerUp.copy(y = powerUp.y + powerUp.speed * dt) }
+                    .filter { powerUp -> powerUp.y < heightPx + powerUp.size }
 
                 val playerLeft = playerX - playerSizePx / 2f
                 val playerRight = playerX + playerSizePx / 2f
@@ -165,8 +188,39 @@ fun GameScreen(onGameOver: (Int) -> Unit, onExit: () -> Unit) {
                     val oBottom = obstacle.y + obstacle.size
                     oRight > playerLeft && oLeft < playerRight && oBottom > playerTop && oTop < playerBottom
                 }
+                val collected = powerUps.firstOrNull { powerUp ->
+                    val pLeft = powerUp.x - powerUp.size / 2f
+                    val pRight = powerUp.x + powerUp.size / 2f
+                    val pTop = powerUp.y
+                    val pBottom = powerUp.y + powerUp.size
+                    pRight > playerLeft && pLeft < playerRight && pBottom > playerTop && pTop < playerBottom
+                }
 
-                if (hit && !hitHandled) {
+                if (collected != null) {
+                    powerUps = powerUps.filterNot { it.id == collected.id }
+                    when (collected.type) {
+                        PowerUpType.Shield -> {
+                            isInvincible = true
+                            invincibleMs = 5_000L
+                            bonusText = "Invincible!"
+                        }
+                        PowerUpType.Bonus50 -> {
+                            score += collected.type.bonus
+                            bonusText = "+${collected.type.bonus}"
+                        }
+                        PowerUpType.Bonus100 -> {
+                            score += collected.type.bonus
+                            bonusText = "+${collected.type.bonus}"
+                        }
+                    }
+                    scope.launch {
+                        bonusPulse.snapTo(1f)
+                        bonusPulse.animateTo(0f, animationSpec = tween(900))
+                        bonusText = null
+                    }
+                }
+
+                if (hit && !hitHandled && !isInvincible) {
                     hitHandled = true
                     isRunning = false
                     haptics.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -235,6 +289,46 @@ fun GameScreen(onGameOver: (Int) -> Unit, onExit: () -> Unit) {
                     size = obstacleSizePx
                 )
                 delay(intervalMs.toLong())
+            }
+        }
+
+        LaunchedEffect(isRunning, widthPx, isPaused) {
+            if (!isRunning) return@LaunchedEffect
+            delay(30_000L)
+            var nextPowerId = 0
+            while (isRunning) {
+                if (isPaused) {
+                    delay(200)
+                    continue
+                }
+                if (Random.nextFloat() > 0.35f) {
+                    val type = when (Random.nextInt(3)) {
+                        0 -> PowerUpType.Bonus50
+                        1 -> PowerUpType.Bonus100
+                        else -> PowerUpType.Shield
+                    }
+                    val x = Random.nextFloat() * (widthPx - obstacleSizePx) + obstacleSizePx / 2f
+                    powerUps = powerUps + PowerUp(
+                        id = nextPowerId++,
+                        x = x,
+                        y = -obstacleSizePx,
+                        speed = 220f,
+                        type = type,
+                        size = obstacleSizePx
+                    )
+                }
+                delay(10_000L)
+            }
+        }
+
+        LaunchedEffect(invincibleMs, isPaused) {
+            if (invincibleMs <= 0L || isPaused) return@LaunchedEffect
+            while (invincibleMs > 0L && !isPaused) {
+                delay(100L)
+                invincibleMs = (invincibleMs - 100L).coerceAtLeast(0L)
+                if (invincibleMs == 0L) {
+                    isInvincible = false
+                }
             }
         }
 
@@ -357,11 +451,25 @@ fun GameScreen(onGameOver: (Int) -> Unit, onExit: () -> Unit) {
                 }
                 Spacer(modifier = Modifier.height(6.dp))
                 Text(
-                    text = if (isPaused) "PAUSED" else "",
+                    text = if (isPaused) "PAUSED" else "SURVIVE",
                     color = Color(0xFF94A3B8),
                     fontSize = 11.sp,
                     letterSpacing = 2.sp
                 )
+                if (isInvincible) {
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = "INVINCIBLE",
+                        style = TextStyle(
+                            brush = Brush.linearGradient(
+                                listOf(Color(0xFF22D3EE), Color(0xFFA855F7))
+                            ),
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 1.sp
+                        )
+                    )
+                }
             }
 
             Row(
@@ -417,6 +525,36 @@ fun GameScreen(onGameOver: (Int) -> Unit, onExit: () -> Unit) {
                                 (obstacle.x - obstacle.size / 2f).roundToInt(),
                                 obstacle.y.roundToInt()
                             )
+                        }
+                )
+            }
+
+            powerUps.forEach { powerUp ->
+                Text(
+                    text = powerUp.type.emoji,
+                    fontSize = 30.sp,
+                    modifier = Modifier
+                        .offset {
+                            IntOffset(
+                                (powerUp.x - powerUp.size / 2f).roundToInt(),
+                                powerUp.y.roundToInt()
+                            )
+                        }
+                )
+            }
+
+            bonusText?.let { text ->
+                Text(
+                    text = text,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFF22C55E).copy(alpha = bonusPulse.value),
+                    modifier = Modifier
+                        .align(Alignment.Center)
+                        .graphicsLayer {
+                            scaleX = 1f + (1f - bonusPulse.value) * 0.2f
+                            scaleY = 1f + (1f - bonusPulse.value) * 0.2f
+                            translationY = -40f * (1f - bonusPulse.value)
                         }
                 )
             }

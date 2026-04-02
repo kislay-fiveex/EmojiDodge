@@ -29,3 +29,6 @@ Show the high score on the game-over screen with consistent styling.
 
 Prompt 10
 Add haptic feedback on collision to improve impact feel.
+
+Prompt 11
+Add collectible power-ups for bonus points and temporary invincibility, with distinct visuals and timed spawning rules.
