@@ -17,3 +17,15 @@ Refine the UI to feel arcade-like with gradients, bold typography, alignment twe
 
 Prompt 6
 Extract Home, Game, and Game Over into separate Compose files to keep the screens independent.
+
+Prompt 7
+Enhance the gameplay background with moving elements to make it feel more dynamic and alive.
+
+Prompt 8
+Increase the difficulty ramp so the challenge becomes noticeable around 15 seconds instead of 30.
+
+Prompt 9
+Show the high score on the game-over screen with consistent styling.
+
+Prompt 10
+Add haptic feedback on collision to improve impact feel.

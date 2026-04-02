@@ -1,7 +1,11 @@
 package com.example.aiproduct.ui.screens
 
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.keyframes
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -46,12 +50,14 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
@@ -72,6 +78,7 @@ fun GameScreen(onGameOver: (Int) -> Unit, onExit: () -> Unit) {
     val context = LocalContext.current
     val prefs = remember { context.getSharedPreferences("emoji_dodge_prefs", android.content.Context.MODE_PRIVATE) }
     var highScore by remember { mutableIntStateOf(prefs.getInt("high_score", 0)) }
+    val haptics = LocalHapticFeedback.current
     val emojis = remember {
         listOf("😈", "👾", "💣", "🧨", "🔥", "⚡", "☠️", "🦠", "💥")
     }
@@ -84,6 +91,16 @@ fun GameScreen(onGameOver: (Int) -> Unit, onExit: () -> Unit) {
     val highScoreGlow = remember { Animatable(0f) }
     val scoreScale = remember { Animatable(1f) }
     val scope = rememberCoroutineScope()
+    val bgTransition = rememberInfiniteTransition(label = "bg")
+    val starDrift by bgTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(12000),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "starDrift"
+    )
 
     var showExitConfirm by remember { mutableStateOf(false) }
     var isPaused by remember { mutableStateOf(false) }
@@ -152,6 +169,7 @@ fun GameScreen(onGameOver: (Int) -> Unit, onExit: () -> Unit) {
                 if (hit && !hitHandled) {
                     hitHandled = true
                     isRunning = false
+                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                     hitPosition = Offset(playerX, playerY + playerSizePx / 2f)
                     scope.launch {
                         flash.snapTo(0.7f)
@@ -202,9 +220,9 @@ fun GameScreen(onGameOver: (Int) -> Unit, onExit: () -> Unit) {
                     delay(120)
                     continue
                 }
-                val difficulty = (elapsedMs / 4_000L).toInt()
-                val intervalMs = (820 - difficulty * 70).coerceAtLeast(260)
-                val speed = (290 + difficulty * 32).toFloat()
+                val difficulty = (elapsedMs / 3_000L).toInt()
+                val intervalMs = (780 - difficulty * 80).coerceAtLeast(240)
+                val speed = (310 + difficulty * 38).toFloat()
                 val x = Random.nextFloat() * (widthPx - obstacleSizePx) + obstacleSizePx / 2f
                 val emoji = emojis.random()
 
@@ -249,13 +267,18 @@ fun GameScreen(onGameOver: (Int) -> Unit, onExit: () -> Unit) {
         }
 
         Canvas(modifier = Modifier.fillMaxSize()) {
-            repeat(40) { index ->
+            val drift = starDrift * size.height
+            repeat(60) { index ->
                 val seedX = (index * 97 % 100) / 100f
                 val seedY = (index * 57 % 100) / 100f
+                val parallax = if (index % 3 == 0) 1.6f else if (index % 3 == 1) 1.0f else 0.6f
+                val y = (size.height * seedY + drift * parallax) % size.height
+                val radius = if (index % 4 == 0) 2.4f else 1.6f
+                val alpha = if (index % 5 == 0) 0.45f else 0.25f
                 drawCircle(
-                    color = Color.White.copy(alpha = 0.2f),
-                    radius = 2.2f,
-                    center = Offset(size.width * seedX, size.height * seedY)
+                    color = Color.White.copy(alpha = alpha),
+                    radius = radius,
+                    center = Offset(size.width * seedX, y)
                 )
             }
         }
@@ -373,8 +396,8 @@ fun GameScreen(onGameOver: (Int) -> Unit, onExit: () -> Unit) {
             }
 
             Text(
-                text = "🙂",
-                fontSize = 36.sp,
+                text = "\uD83D\uDC08",
+                fontSize = 40.sp,
                 modifier = Modifier
                     .offset {
                         IntOffset(
